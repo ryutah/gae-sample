@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"strconv"
-	"strings"
 
 	"github.com/ryutah/gae-sample/sample/model"
 
@@ -12,7 +11,9 @@ import (
 )
 
 type groupIndex struct {
-	Search search.HTML
+	Name    string
+	Belongs search.HTML
+	Users   search.HTML
 }
 
 func NewGroupFromModel(g *model.Group, belongs []*model.Group, users []*model.User) *Group {
@@ -53,30 +54,56 @@ type (
 	}
 )
 
+func (g *Group) Encode() (*groupIndex, error) {
+	belongs, err := xml.Marshal(g.Belongs)
+	if err != nil {
+		return nil, err
+	}
+	users, err := xml.Marshal(g.Users)
+	if err != nil {
+		return nil, err
+	}
+	return &groupIndex{
+		Name:    g.Name,
+		Belongs: search.HTML(belongs),
+		Users:   search.HTML(users),
+	}, nil
+}
+
+func (g *Group) Decode(gi *groupIndex) error {
+	g.Name = gi.Name
+	if len(gi.Belongs) != 0 {
+		if err := xml.Unmarshal([]byte(gi.Belongs), &g.Belongs); err != nil {
+			return err
+		}
+	}
+	if len(gi.Users) != 0 {
+		if err := xml.Unmarshal([]byte(gi.Users), &g.Users); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func PutGroup(ctx context.Context, groupID int64, g *Group) (*Group, error) {
 	index, err := search.Open("Group")
 	if err != nil {
 		return nil, err
 	}
 	id := strconv.FormatInt(groupID, 10)
-	groupXml, err := xml.Marshal(g)
-	if err != nil {
-		return nil, err
-	}
-	groupIdx := &groupIndex{Search: search.HTML(groupXml)}
+	groupIdx, err := g.Encode()
 	if _, err := index.Put(ctx, id, groupIdx); err != nil {
 		return nil, err
 	}
 	return g, nil
 }
 
-func SearchGroup(ctx context.Context, params []string) ([]*Group, error) {
+func SearchGroup(ctx context.Context, q string) ([]*Group, error) {
 	index, err := search.Open("Group")
 	if err != nil {
 		return nil, err
 	}
 
-	q := strings.Join(params, " AND ")
 	ite := index.Search(ctx, q, &search.SearchOptions{
 		Limit: 50,
 	})
@@ -84,16 +111,18 @@ func SearchGroup(ctx context.Context, params []string) ([]*Group, error) {
 	var groups []*Group
 	for {
 		gIdx := new(groupIndex)
-		if _, err := ite.Next(gIdx); err == search.Done {
+		id, err := ite.Next(gIdx)
+		if err == search.Done {
 			break
 		} else if err != nil {
 			return nil, err
 		}
 
 		g := new(Group)
-		if err := xml.Unmarshal([]byte(gIdx.Search), g); err != nil {
+		if err := g.Decode(gIdx); err != nil {
 			return nil, err
 		}
+		g.ID = id
 		groups = append(groups, g)
 	}
 	return groups, nil

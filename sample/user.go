@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/ryutah/gae-sample/sample/index"
 	"github.com/ryutah/gae-sample/sample/model"
@@ -59,12 +58,7 @@ func (u *UserGetList) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := appengine.NewContext(r)
 
 	q := r.FormValue("q")
-	var params []string
-	if q != "" {
-		params = strings.Split(q, " ")
-	}
-
-	uIndexs, err := index.SearchUser(ctx, params)
+	uIndexs, err := index.SearchUser(ctx, q)
 	if err != nil {
 		log.Errorf(ctx, "failed to search : %v", err)
 		http.Error(w, err.Error(), 500)

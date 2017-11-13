@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"google.golang.org/appengine"
 	"google.golang.org/appengine/datastore"
@@ -60,11 +59,7 @@ func (g *GroupGetList) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := appengine.NewContext(r)
 
 	q := r.FormValue("q")
-	var params []string
-	if q != "" {
-		params = strings.Split(q, " ")
-	}
-	gIndexs, err := index.SearchGroup(ctx, params)
+	gIndexs, err := index.SearchGroup(ctx, q)
 	if err != nil {
 		log.Errorf(ctx, "failed to search : %v", err)
 		http.Error(w, err.Error(), 500)

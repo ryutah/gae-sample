@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"strconv"
-	"strings"
 
 	"github.com/ryutah/gae-sample/sample/model"
 
@@ -12,7 +11,9 @@ import (
 )
 
 type userIndex struct {
-	Search search.HTML
+	Name    string
+	Email   string
+	Belongs search.HTML
 }
 
 func NewUserFromModel(u *model.User, belongs ...*model.Group) *User {
@@ -47,47 +48,63 @@ type (
 	}
 )
 
+func (u *User) encode() (*userIndex, error) {
+	belongs, err := xml.Marshal(u.Belongs)
+	if err != nil {
+		return nil, err
+	}
+	return &userIndex{
+		Name:    u.Name,
+		Email:   u.Email,
+		Belongs: search.HTML(belongs),
+	}, nil
+}
+
+func (u *User) decode(ui *userIndex) error {
+	u.Name, u.Email = ui.Name, ui.Email
+	if len(ui.Belongs) != 0 {
+		if err := xml.Unmarshal([]byte(ui.Belongs), &u.Belongs); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func PutUser(ctx context.Context, userID int64, u *User) (*User, error) {
 	index, err := search.Open("User")
 	if err != nil {
 		return nil, err
 	}
 	id := strconv.FormatInt(userID, 10)
-	userXml, err := xml.Marshal(u)
-	if err != nil {
-		return nil, err
-	}
-	userIdx := &userIndex{Search: search.HTML(userXml)}
+	userIdx, err := u.encode()
 	if _, err := index.Put(ctx, id, userIdx); err != nil {
 		return nil, err
 	}
 	return u, nil
 }
 
-func SearchUser(ctx context.Context, params []string) ([]*User, error) {
+func SearchUser(ctx context.Context, q string) ([]*User, error) {
 	index, err := search.Open("User")
 	if err != nil {
 		return nil, err
 	}
 
-	q := strings.Join(params, " AND ")
-	ite := index.Search(ctx, q, &search.SearchOptions{
-		Limit: 50,
-	})
-
+	ite := index.Search(ctx, q, &search.SearchOptions{Limit: 50})
 	var users []*User
 	for {
 		uIdx := new(userIndex)
-		if _, err := ite.Next(uIdx); err == search.Done {
+		id, err := ite.Next(uIdx)
+		if err == search.Done {
 			break
 		} else if err != nil {
 			return nil, err
 		}
 
 		u := new(User)
-		if err := xml.Unmarshal([]byte(uIdx.Search), u); err != nil {
+		if err := u.decode(uIdx); err != nil {
 			return nil, err
 		}
+		u.ID = id
 		users = append(users, u)
 	}
 	return users, nil
